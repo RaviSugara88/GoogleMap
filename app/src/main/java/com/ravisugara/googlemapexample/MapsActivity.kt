@@ -1,143 +1,234 @@
+/*
+ * Copyright (c) 2018 Razeware LLC
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * Notwithstanding the foregoing, you may not use, copy, modify, merge, publish,
+ * distribute, sublicense, create a derivative work, and/or sell copies of the
+ * Software in any work that is designed, intended, or marketed for pedagogical or
+ * instructional purposes related to programming, coding, application development,
+ * or information technology.  Permission for such use, copying, modification,
+ * merger, publication, distribution, sublicensing, creation of derivative works,
+ * or sale is expressly withheld.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 package com.ravisugara.googlemapexample
 
-import android.Manifest
+import android.app.Activity
+import android.content.Intent
+import android.content.IntentSender
 import android.content.pm.PackageManager
+import android.graphics.Color
+import android.location.Address
+import android.location.Geocoder
 import android.location.Location
-import android.location.LocationListener
-import android.os.Build
-import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
-import android.os.Looper
+import android.os.Handler
+import android.util.Log
 import android.widget.Toast
-import androidx.core.content.ContextCompat
-import com.google.android.gms.common.ConnectionResult
-import com.google.android.gms.common.api.GoogleApiClient
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationCallback
-import com.google.android.gms.location.LocationRequest
-import com.google.android.gms.location.LocationServices
-
+import androidx.appcompat.app.AppCompatActivity
+import androidx.core.app.ActivityCompat
+import com.google.android.gms.common.GooglePlayServicesNotAvailableException
+import com.google.android.gms.common.GooglePlayServicesRepairableException
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.location.*
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
-import com.google.android.gms.maps.model.BitmapDescriptorFactory
-import com.google.android.gms.maps.model.LatLng
-import com.google.android.gms.maps.model.Marker
-import com.google.android.gms.maps.model.MarkerOptions
-import com.ravisugara.googlemapexample.databinding.ActivityMapsBinding
+import com.google.android.gms.maps.model.*
+import com.google.android.material.floatingactionbutton.FloatingActionButton
+import com.ravisugara.googlemapexample.util.AnimationUtils
+import com.ravisugara.googlemapexample.util.MapUtils
+import java.io.IOException
 
-class MapsActivity : AppCompatActivity(), OnMapReadyCallback, LocationListener,
-    GoogleApiClient.ConnectionCallbacks, GoogleApiClient.OnConnectionFailedListener {
 
-    private lateinit var mMap: GoogleMap
-    private lateinit var binding: ActivityMapsBinding
-    // for get current location
-    internal lateinit var mLastLocation: Location
-    internal lateinit var mLocationResult: LocationRequest
-    internal lateinit var mLocationCallback: LocationCallback
-    internal var mCurrLocationMarker: Marker? = null
-    internal var mGoogleApiClient: GoogleApiClient? = null
-    internal lateinit var mLocationRequest: LocationRequest
-    internal var mFusedLocationClient: FusedLocationProviderClient? = null
+class MapsActivity : AppCompatActivity(), OnMapReadyCallback,
+    GoogleMap.OnMarkerClickListener {
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
+  private lateinit var googleMap: GoogleMap
+  private lateinit var defaultLocation: LatLng
+  private var originMarker: Marker? = null
+  private var destinationMarker: Marker? = null
+  private var grayPolyline: Polyline? = null
+  private var blackPolyline: Polyline? = null
+  private var movingCabMarker: Marker? = null
+  private var previousLatLng: LatLng? = null
+  private var currentLatLng: LatLng? = null
+  private lateinit var handler: Handler
+  private lateinit var runnable: Runnable
+  override fun onCreate(savedInstanceState: Bundle?) {
+    super.onCreate(savedInstanceState)
+    setContentView(R.layout.activity_maps)
+    // Obtain the SupportMapFragment and get notified when the map is ready to be used.
+    val mapFragment = supportFragmentManager
+        .findFragmentById(R.id.map) as SupportMapFragment
+    mapFragment.getMapAsync(this)
 
-        binding = ActivityMapsBinding.inflate(layoutInflater)
-        setContentView(binding.root)
 
-        // Obtain the SupportMapFragment and get notified when the map is ready to be used.
-        val mapFragment = supportFragmentManager
-            .findFragmentById(R.id.map) as SupportMapFragment
-        mapFragment.getMapAsync(this)
-        mLocationCallback = LocationCallback()
     }
 
-    /**
-     * Manipulates the map once available.
-     * This callback is triggered when the map is ready to be used.
-     * This is where we can add markers or lines, add listeners or move the camera. In this case,
-     * we just add a marker near Sydney, Australia.
-     * If Google Play services is not installed on the device, the user will be prompted to install
-     * it inside the SupportMapFragment. This method will only be triggered once the user has
-     * installed Google Play services and returned to the app.
-     */
-    override fun onMapReady(googleMap: GoogleMap) {
-        mMap = googleMap
 
-        // Add a marker in Sydney and move the camera
-      //  val sydney = LatLng(-34.0, 151.0)
-       // mMap.addMarker(MarkerOptions().position(sydney).title("Marker in Sydney"))
-      //  mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney))
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (ContextCompat.checkSelfPermission(this,
-                    Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-                buildGoogleApiClient()
-                mMap!!.isMyLocationEnabled = true
-            }
+
+  /**
+   * Manipulates the map once available.
+   * This callback is triggered when the map is ready to be used.
+   * This is where we can add markers or lines, add listeners or move the camera. In this case,
+   * we just add a marker near Sydney, Australia.
+   * If Google Play services is not installed on the device, the user will be prompted to install
+   * it inside the SupportMapFragment. This method will only be triggered once the user has
+   * installed Google Play services and returned to the app.
+   */
+  private fun moveCamera(latLng: LatLng) {
+    googleMap.moveCamera(CameraUpdateFactory.newLatLng(latLng))
+  }
+
+  private fun animateCamera(latLng: LatLng) {
+    val cameraPosition = CameraPosition.Builder().target(latLng).zoom(15.5f).build()
+    googleMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition))
+  }
+
+  private fun addCarMarkerAndGet(latLng: LatLng): Marker {
+    val bitmapDescriptor = BitmapDescriptorFactory.fromBitmap(MapUtils.getCarBitmap(this))
+    return googleMap.addMarker(
+      MarkerOptions().position(latLng).flat(true).icon(bitmapDescriptor)
+    )
+  }
+
+  private fun addOriginDestinationMarkerAndGet(latLng: LatLng): Marker {
+    val bitmapDescriptor =
+      BitmapDescriptorFactory.fromBitmap(MapUtils.getOriginDestinationMarkerBitmap())
+    return googleMap.addMarker(
+      MarkerOptions().position(latLng).flat(true).icon(bitmapDescriptor)
+    )
+  }
+
+  private fun showDefaultLocationOnMap(latLng: LatLng) {
+    moveCamera(latLng)
+    animateCamera(latLng)
+  }
+
+  /**
+   * This function is used to draw the path between the Origin and Destination.
+   */
+  private fun showPath(latLngList: ArrayList<LatLng>) {
+    val builder = LatLngBounds.Builder()
+    for (latLng in latLngList) {
+      builder.include(latLng)
+    }
+    val bounds = builder.build()
+    googleMap.animateCamera(CameraUpdateFactory.newLatLngBounds(bounds, 2))
+
+    val polylineOptions = PolylineOptions()
+    polylineOptions.color(Color.GRAY)
+    polylineOptions.width(5f)
+    polylineOptions.addAll(latLngList)
+    grayPolyline = googleMap.addPolyline(polylineOptions)
+
+    val blackPolylineOptions = PolylineOptions()
+    blackPolylineOptions.color(Color.BLACK)
+    blackPolylineOptions.width(5f)
+    blackPolyline = googleMap.addPolyline(blackPolylineOptions)
+
+    originMarker = addOriginDestinationMarkerAndGet(latLngList[0])
+    originMarker?.setAnchor(0.5f, 0.5f)
+    destinationMarker = addOriginDestinationMarkerAndGet(latLngList[latLngList.size - 1])
+    destinationMarker?.setAnchor(0.5f, 0.5f)
+
+    val polylineAnimator = AnimationUtils.polylineAnimator()
+    polylineAnimator.addUpdateListener { valueAnimator ->
+      val percentValue = (valueAnimator.animatedValue as Int)
+      val index = (grayPolyline?.points!!.size) * (percentValue / 100.0f).toInt()
+      blackPolyline?.points = grayPolyline?.points!!.subList(0, index)
+    }
+    polylineAnimator.start()
+  }
+
+  /**
+   * This function is used to update the location of the Cab while moving from Origin to Destination
+   */
+  private fun updateCarLocation(latLng: LatLng) {
+    if (movingCabMarker == null) {
+      movingCabMarker = addCarMarkerAndGet(latLng)
+    }
+    if (previousLatLng == null) {
+      currentLatLng = latLng
+      previousLatLng = currentLatLng
+      movingCabMarker?.position = currentLatLng
+      movingCabMarker?.setAnchor(0.5f, 0.5f)
+      animateCamera(currentLatLng!!)
+    } else {
+      previousLatLng = currentLatLng
+      currentLatLng = latLng
+      val valueAnimator = AnimationUtils.carAnimator()
+      valueAnimator.addUpdateListener { va ->
+        if (currentLatLng != null && previousLatLng != null) {
+          val multiplier = va.animatedFraction
+          val nextLocation = LatLng(
+            multiplier * currentLatLng!!.latitude + (1 - multiplier) * previousLatLng!!.latitude,
+            multiplier * currentLatLng!!.longitude + (1 - multiplier) * previousLatLng!!.longitude
+          )
+          movingCabMarker?.position = nextLocation
+          val rotation = MapUtils.getRotation(previousLatLng!!, nextLocation)
+          if (!rotation.isNaN()) {
+            movingCabMarker?.rotation = rotation
+          }
+          movingCabMarker?.setAnchor(0.5f, 0.5f)
+          animateCamera(nextLocation)
+        }
+      }
+      valueAnimator.start()
+    }
+  }
+
+  private fun showMovingCab(cabLatLngList: ArrayList<LatLng>) {
+    handler = Handler()
+    var index = 0
+    runnable = Runnable {
+      run {
+        if (index < 10) {
+          updateCarLocation(cabLatLngList[index])
+          handler.postDelayed(runnable, 3000)
+          ++index
         } else {
-            buildGoogleApiClient()
-            mMap!!.isMyLocationEnabled = true
+          handler.removeCallbacks(runnable)
+          Toast.makeText(this@MapsActivity, "Trip Ends", Toast.LENGTH_LONG).show()
         }
+      }
     }
+    handler.postDelayed(runnable, 5000)
+  }
 
-    @Synchronized
-    protected fun buildGoogleApiClient() {
-        mGoogleApiClient = GoogleApiClient.Builder(this)
-            .addConnectionCallbacks(this)
-            .addOnConnectionFailedListener(this)
-            .addApi(LocationServices.API).build()
-        mGoogleApiClient!!.connect()
-    }
+  override fun onMapReady(googleMap: GoogleMap) {
+    this.googleMap = googleMap
+    defaultLocation = LatLng(28.435350000000003, 77.11368)
+    showDefaultLocationOnMap(defaultLocation)
 
-    override fun onLocationChanged(location: Location) {
+    Handler().postDelayed(Runnable {
+      showPath(MapUtils.getListOfLocations())
+      showMovingCab(MapUtils.getListOfLocations())
+    }, 3000)
+  }
 
-     //   TODO("Not yet implemented")
+  override fun onMarkerClick(p0: Marker?): Boolean {
+    return false
+  }
 
-        mLastLocation = location
-        if (mCurrLocationMarker != null) {
-            mCurrLocationMarker!!.remove()
-        }
-        //Place current location marker
-        val latLng = LatLng(location.latitude, location.longitude)
-        val markerOptions = MarkerOptions()
-        markerOptions.position(latLng)
-        markerOptions.title("Current Position")
-        markerOptions.icon(BitmapDescriptorFactory.defaultMarker(BitmapDescriptorFactory.HUE_GREEN))
-        mCurrLocationMarker = mMap!!.addMarker(markerOptions)
-
-        //move map camera
-        mMap!!.moveCamera(CameraUpdateFactory.newLatLng(latLng))
-        mMap!!.animateCamera(CameraUpdateFactory.zoomTo(11f))
-
-        //stop location updates
-        if (mGoogleApiClient != null) {
-            mFusedLocationClient?.removeLocationUpdates(mLocationCallback)
-        }
-    }
-
-    override fun onConnected(p0: Bundle?) {
-        mLocationRequest = LocationRequest()
-        mLocationRequest.interval = 1000
-        mLocationRequest.fastestInterval = 1000
-        mLocationRequest.priority = LocationRequest.PRIORITY_BALANCED_POWER_ACCURACY
-        if (ContextCompat.checkSelfPermission(this,
-                Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
-            mFusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
-            mFusedLocationClient?.requestLocationUpdates(mLocationRequest,mLocationCallback, Looper.myLooper())
-        }
-        //  TODO("Not yet implemented")
-    }
-
-    override fun onConnectionSuspended(p0: Int) {
-        Toast.makeText(applicationContext,"connection failed", Toast.LENGTH_SHORT).show()
-        //  TODO("Not yet implemented")
-    }
-
-    override fun onConnectionFailed(p0: ConnectionResult) {
-        Toast.makeText(applicationContext,"connection suspended", Toast.LENGTH_SHORT).show()
-        //   TODO("Not yet implemented")
-    }
 }
